@@ -1,7 +1,20 @@
+// Imports
+const db = require("./database")
 const express = require("express")
+
 const router = express.Router()
 
 router.post("/register", (req, res) => {
+  const { username, password, email } = req.body
+  console.log(`${username}`)
+  console.log(`${password}`)
+  console.log(`${email}`)
+
+  const queryStatement = `INSERT INTO account (username, password, email, is_admin, is_enabled) VALUES ('${username}', '${password}', '${email}', false, true);`
+  const result = db.query(queryStatement)
+
+  // Find out via result if it succeeded or failed.
+  console.log(result)
   res.status(200).send("Register")
 })
 
@@ -10,6 +23,11 @@ router.post("/login", (req, res) => {
 })
 
 router.get("/users", (req, res) => {
+  // Do not select password.
+  const queryStatement = `SELECT (username, email, is_admin, is_enabled) from accounts;`
+  const result = db.query(queryStatement)
+  console.log(result)
+
   res.status(200).send("Get All Users")
 })
 

@@ -7,3 +7,6 @@ CREATE TABLE IF NOT EXISTS `account` (
     `is_admin` bool NOT NULL,
     `is_enabled` bool NOT NULL
 ) ENGINE=InnoDB;
+
+INSERT INTO `account` (`username`, `password`, `email`, `is_admin`, `is_enabled`)
+VALUES ('admin', 'admin', 'admin@example.net', true, true);
