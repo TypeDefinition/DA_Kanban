@@ -1,0 +1,15 @@
+{
+	"id": "7e305474-71dc-410d-9832-beb98f4e1125",
+	"name": "Asn3",
+	"values": [
+		{
+			"key": "DOMAIN",
+			"value": "http://localhost:3502",
+			"type": "default",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment",
+	"_postman_exported_at": "2024-07-11T08:35:55.886Z",
+	"_postman_exported_using": "Postman/11.3.1"
+}

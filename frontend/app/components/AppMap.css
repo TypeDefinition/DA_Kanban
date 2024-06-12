@@ -1,0 +1,6 @@
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 20rem));
+  gap: 1rem;
+  padding: 1rem;
+}
