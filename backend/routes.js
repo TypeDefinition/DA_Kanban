@@ -12,9 +12,8 @@ router.post("/register", (req, res) => {
     // we cannot add it directly to the query in case of injection attacks.
     // We instead use ?, and then pass in the values as an array at the end.
     try {
-      const queryStatement = `INSERT INTO account (username, password, email, is_admin, is_enabled) VALUES (?, ?, ?, false, true);`
-      const result = await db.query(queryStatement, [username, password, email])
-      console.log(result)
+      const statement = `INSERT INTO account (username, password, email, is_admin, is_enabled) VALUES (?, ?, ?, false, true);`
+      const result = await db.query(statement, [username, password, email])
       res.status(200).send("Success")
     } catch (e) {
       console.log(e)
@@ -40,9 +39,8 @@ router.post("/login", (req, res) => {
 router.get("/users", (req, res) => {
   async function doQuery(req, res) {
     try {
-      const queryStatement = `SELECT username, email, is_admin, is_enabled FROM account;`
-      const [rows] = await db.query(queryStatement)
-      console.log(rows)
+      const statement = `SELECT username, email, is_admin, is_enabled FROM account;`
+      const [rows] = await db.query(statement)
       res.status(200).send(rows)
     } catch (e) {
       console.log(e.sqlMessage)
@@ -52,13 +50,24 @@ router.get("/users", (req, res) => {
   doQuery(req, res)
 })
 
-router.get("/user/:id", (req, res) => {
-  // Check if token user is same is :id.
-  // If true, return user details. (excluding password)
-  res.status(200).send("Get User")
+router.get("/user/:username", (req, res) => {
+  async function doQuery(req, res) {
+    try {
+      const statement = `SELECT username, email FROM account where username=?;`
+      const [rows] = await db.query(statement, [req.params.username])
+      if (rows.length == 0) {
+        res.status(400).send("User not found.")
+      }
+      res.status(200).send(rows[0])
+    } catch (e) {
+      console.log(e.sqlMessage)
+      res.status(400).send("Bad request.")
+    }
+  }
+  doQuery(req, res)
 })
 
-router.patch("/user/:id/password", (req, res) => {
+router.patch("/user/:username/password", (req, res) => {
   res.status(200).send("Change Password")
 })
 
