@@ -1,7 +1,7 @@
 // Imports
 const express = require("express")
 const session = require("express-session")
-const path = require("path")
+const cors = require("cors")
 
 // Routes
 const routes = require("./routes")
@@ -10,6 +10,7 @@ const routes = require("./routes")
 const app = express()
 
 // Inititalize the app and add middleware
+app.use(cors()) // Allows anyone to connect.
 app.use(express.urlencoded({ extended: true })) // Setup the body parser to handle form submits.
 app.use(express.json())
 app.use(session({ secret: "super-secret" })) // Session setup.
