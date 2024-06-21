@@ -8,17 +8,20 @@ function Login() {
   const [username, setUsername] = useState()
   const [password, setPassword] = useState()
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function onLogin(event) {
+    event.preventDefault()
     try {
-      console.log("Before Send")
-      const res = await Axios.post("/login", { username, password })
-      console.log("After Send")
-      if (res.status == 200) {
-        appDispatch({ type: "login", token: res.token, username })
-      }
+      const response = await Axios.post("/login", { username, password })
+
+      if (response.status != 200) throw "Login failed."
+
+      appDispatch({
+        type: "login",
+        token: response.data.token,
+        username: response.data.username,
+        email: response.data.email,
+      })
     } catch (e) {
-      console.log("Error thrown")
       console.log(e)
     }
   }
@@ -27,7 +30,7 @@ function Login() {
     <Page title="Login">
       <div>
         <h1>Task Management System Login</h1>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={onLogin}>
           <div>
             <input
               onChange={(e) => {

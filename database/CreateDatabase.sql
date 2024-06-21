@@ -6,11 +6,12 @@ CREATE TABLE IF NOT EXISTS `user` (
     `user_password` VARCHAR(255) NOT NULL,
     `user_email` VARCHAR(255),
     `user_enabled` BOOL NOT NULL
-) ENGINE=InnoDB;
+) ENGINE=InnoDB; 	
 /* Admin Username: admin
    Admin Password: password */
 INSERT INTO `user` (`user_username`, `user_password`, `user_email`, `user_enabled`) VALUES ("admin", "$2a$10$H5KMED.t.xxaXamzzxE7j.BRLjmIH19BuRtGKdlvtOzMnuqMnTvRu", "admin@mailinator.com", true);
 
+/* Call it tag because group is a reserved keyword. */
 CREATE TABLE IF NOT EXISTS `tag` (
 	`tag_name` VARCHAR(255) PRIMARY KEY
 ) ENGINE=InnoDB;

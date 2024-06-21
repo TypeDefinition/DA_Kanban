@@ -9,32 +9,52 @@ const validator = require("./validator")
 
 const router = express.Router()
 
+// Encrypt the password so that we are not storing plaintext.
+function hashPassword(password) {
+  return bcrypt.hashSync(password, bcrypt.genSaltSync(Number(process.env.PASSWORD_SALT)))
+}
+
 function authToken(req, res, next) {
-  const { token } = req.body
-  if (token == null) return res.status(400).send()
+  const token = req.headers.authorization.split(" ")[1] // Note: authorization must be in small letters.
+  if (token == null) {
+    console.log("Authenticate token: Null token.")
+    return res.status(400).send()
+  }
 
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user /*What we passed in when signing the token.*/) => {
-    if (err) return res.status(400).send() // Error was thrown.
-    if (req.connection.remoteAddress != user.ipAddress) return res.status(400).send() // IP Address mismatch.
-    if (req.get("User-Agent") != user.userAgent) return res.status(400).send() // Browser mismatch.
+    if (err) {
+      console.log("Authenticate token: Invalid token.")
+      return res.status(400).send()
+    }
+    if (req.connection.remoteAddress != user.ipAddress) {
+      console.log(`Authenticate token: User ${user.username} IP address mismatch.`)
+      return res.status(400).send()
+    }
+    if (req.get("User-Agent") != user.userAgent) {
+      console.log(`Authenticate token: User ${user.username} user agent mismatch.`)
+      return res.status(400).send()
+    }
 
     // Pass on the user object to the request.
     req.user = user
-
+    console.log(`Authenticate token: User ${user.username} authenticated.`)
     next()
   })
 }
 
-function isInGroup(user, group) {
+async function checkGroup(user, group) {
   try {
-    const statement = `SELECT * FROM tagging WHERE tagging_user=?, tagging_tag=?;`
-    const [rows] = db.query(statement, [user, group])
+    const statement = `SELECT * FROM tagging WHERE tagging_user=? AND tagging_tag=?;`
+    const [rows] = await db.query(statement, [user, group])
     return 1 == rows.length
   } catch (e) {
+    console.log(e)
     return false
   }
 }
 
+/******************** User ********************/
+// User login.
 router.post("/login", (req, res) => {
   async function doQuery(req, res) {
     try {
@@ -44,27 +64,36 @@ router.post("/login", (req, res) => {
       /* Query from the dataabase.
       Because username and password are untrusted data from the end user, we cannot add it directly to the query in case of injection attacks.
       We instead use ?, and then pass in the values as an array. */
-      const statement = `SELECT user_username, user_password, user_enabled FROM user where user_username=?;`
+      const statement = `SELECT user_username, user_password, user_email, user_enabled FROM user where user_username=?;`
       const [rows] = await db.query(statement, [username]) // The [rows] syntax means that we only want the first element of the result array.
 
       // User not found.
-      if (rows.length == 0) throw `User ${username}: Does not exist.`
+      if (rows.length == 0) throw `Login: User ${username} does not exist.`
       // User not enabled.
-      if (!rows[0].user_enabled) throw `User ${username}: Disabled.`
+      if (!rows[0].user_enabled) throw `Login: User ${username} is disabled.`
       // Invalid password.
       const validPassword = await bcrypt.compare(password, rows[0].user_password)
-      if (!validPassword) throw `User ${username}: Invalid password.`
+      if (!validPassword) throw `Login: User ${username} has invalid password.`
 
       const ipAddress = req.connection.remoteAddress // What is the user's IP address?
       const userAgent = req.get("User-Agent") // What is the user's browser?
-      const user = { username, ipAddress, userAgent }
+      const user = {
+        username: rows[0].user_username,
+        email: rows[0].user_email,
+        ipAddress,
+        userAgent,
+      }
 
       // Sign a JSON Web Token (JWT).
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET)
 
       // Return the JWT to the user.
-      console.log(`User ${username}: Login successful.`)
-      res.status(200).json({ token })
+      console.log(`Login: User ${username} logged in.`)
+      res.status(200).json({
+        token,
+        username: rows[0].user_username,
+        email: rows[0].user_email,
+      })
     } catch (e) {
       console.log(e)
       res.status(400).send()
@@ -73,26 +102,41 @@ router.post("/login", (req, res) => {
   doQuery(req, res)
 })
 
-router.post("/user/create", authToken, (req, res) => {
+// Update user details.
+router.patch("/user/profile", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
-      // Ensure that the current user has sufficient permissions.
-      if (!isInGroup(req.user.username, "admin")) {
-        throw `User ${req.user.username} is not an admin.`
+      const username = req.user.username
+      const { type } = req.body
+
+      // Update email.
+      if (type == "email") {
+        const { email } = req.body
+        if (!validator.isValidEmail(email)) throw `Update user: User ${username} has invalid email format.`
+
+        const statement = `UPDATE user SET user_email=? WHERE user_username=?;`
+        const [result] = await db.query(statement, [email, username])
+
+        // Throw error if failed.
+        if (result.affectedRows != 1) throw `Update user: User ${username} does not exist.`
       }
 
-      // Retrieve the username, password and email from the request body and validate them.
-      const { username, password, email } = req.body
-      if (!validator.isValidUsername(username)) throw `User ${username}: Invalid username format.`
-      if (!validator.isValidPassword(password)) throw `User ${username}: Invalid password format.`
-      if (!validator.isValidEmail(email)) throw `User ${username}: Invalid email format.`
+      // Update password.
+      else if (type == "password") {
+        const { password } = req.body
+        if (!validator.isValidPassword(password)) throw `Update user: User ${username} has invalid password format.`
 
-      // Encrypt the password so that we are not storing plaintext.
-      const passwordHash = bcrypt.hashSync(password, bcrypt.genSaltSync(10))
+        // Encrypt the password so that we are not storing plaintext.
+        const statement = `UPDATE user SET user_password=? WHERE user_username=?;`
+        const [result] = await db.query(statement, [hashPassword(password), username])
 
-      // Insert into database.
-      const statement = `INSERT INTO user (user_username, user_password, user_email, user_enabled) VALUES (?, ?, ?, true);`
-      await db.query(statement, [username, passwordHash, email])
+        // Throw error if failed.
+        if (result.affectedRows != 1) throw `Update user: User ${username} does not exist.`
+      }
+      // Invalid action.
+      else {
+        throw `Update user: User ${username} has invalid update action.`
+      }
 
       res.status(200).send()
     } catch (e) {
@@ -103,87 +147,152 @@ router.post("/user/create", authToken, (req, res) => {
   doQuery(req, res)
 })
 
-router.patch("/user-update/:username", authToken, (req, res) => {
-  // Only a user can update themselves using this route.
-  if (req.user.username != req.params.username) {
-    res.status(400).send("Bad request.")
-    return
-  }
-
+/******************** Admin ********************/
+// Get all groups.
+router.get("/user/groups", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
-      const { password, email } = req.body
-      const statement = `UPDATE account SET password=? email=? WHERE username=?`
-      const [result] = await db.query(statement, [password, email, req.params.username])
-      if (result.affectedRows == 1) {
-        res.status(200).send("User updated.")
-      } else {
-        res.status(400).send("Bad request.")
+      // Ensure that the current user has sufficient permissions.
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        throw `Admin retrieve groups: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
-    } catch (e) {
-      console.log(e.sqlMessage)
-      res.status(400).send("Bad request.")
-    }
-  }
-  doQuery(req, res)
-})
 
-router.patch("/admin-update/:username", authToken, (req, res) => {
-  async function doQuery(req, res) {
-    // Check if this is an admin.
-    if (!isInGroup(username, "admin")) {
-      res.status(400).send("Bad request.")
-      return
-    }
-
-    try {
-      const { password, email, enabled } = req.body
-      const statement = `UPDATE account SET password=? email=? enabled=? WHERE username=?`
-      const [result] = await db.query(statement, [password, email, enabled, req.params.username])
-      if (result.affectedRows == 1) {
-        res.status(200).send("User updated.")
-      } else {
-        res.status(400).send("Bad request.")
-      }
-    } catch (e) {
-      console.log(e.sqlMessage)
-      res.status(400).send("Bad request.")
-    }
-  }
-  doQuery(req, res)
-})
-
-// View all users.
-router.get("/users", authToken, (req, res) => {
-  async function doQuery(req, res) {
-    try {
-      const statement = `SELECT username, email, enabled FROM account;`
+      const statement = `SELECT * FROM tag;`
       const [rows] = await db.query(statement)
-      res.status(200).send(rows)
+      const groups = rows.map((element) => element.tag_name)
+
+      res.status(200).json({ groups })
     } catch (e) {
-      console.log(e.sqlMessage)
-      res.status(400).send("Bad request.")
+      console.log(e)
+      res.status(400).send()
     }
   }
   doQuery(req, res)
 })
 
-// View specific user.
-router.get("/user/:username", authToken, (req, res) => {
+// Create new group.
+router.post("/user/groups", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
-      const statement = `SELECT username, email FROM account where username=?;`
-      const [rows] = await db.query(statement, [req.params.username])
-
-      if (rows.length == 0) {
-        res.status(400).send("User not found.")
-        return
+      // Ensure that the current user has sufficient permissions.
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        throw `Admin create group: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
 
-      res.status(200).send(rows[0])
+      const { group } = req.body
+      if (!validator.isValidGroup(group)) throw `Admin create group: Group ${group} has invalid name format.`
+
+      // Insert into database.
+      const statement = `INSERT INTO tag (tag_name) VALUES (?);`
+      await db.query(statement, [group])
+
+      res.status(200).send()
     } catch (e) {
-      console.log(e.sqlMessage)
-      res.status(400).send("Bad request.")
+      console.log(e)
+      res.status(400).send()
+    }
+  }
+  doQuery(req, res)
+})
+
+// Get all users.
+router.get("/user/users", authToken, (req, res) => {
+  async function doQuery(req, res) {
+    try {
+      // Ensure that the current user has sufficient permissions.
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        throw `Admin retrieve users: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      }
+
+      const statement = `SELECT user_username, user_email, user_enabled FROM user;`
+      const [rows] = await db.query(statement)
+      const users = rows.map((element) => {
+        return {
+          username: element.user_username,
+          email: element.user_email,
+          enabled: Boolean(element.user_enabled),
+        }
+      })
+
+      res.status(200).json({ users })
+    } catch (e) {
+      {
+        console.log(e)
+        res.status(400).send()
+      }
+    }
+  }
+  doQuery(req, res)
+})
+
+// Create new user.
+router.post("/user/users", authToken, (req, res) => {
+  async function doQuery(req, res) {
+    try {
+      // Ensure that the current user has sufficient permissions.
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        throw `Admin create user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      }
+
+      // Retrieve the username, password and email from the request body and validate them.
+      const { username, password, email, enabled } = req.body
+      if (!validator.isValidUsername(username)) throw `Admin create user: User ${username} has invalid username format.`
+      if (!validator.isValidPassword(password)) throw `Admin create user: User ${username} has invalid password format.`
+      if (!validator.isValidEmail(email)) throw `Admin create user: User ${username} has invalid email format.`
+      if (!validator.isValidEnabled(enabled)) throw `Admin create user: User ${username} has invalid enabled format.`
+
+      // Insert into database.
+      const statement = `INSERT INTO user (user_username, user_password, user_email, user_enabled) VALUES (?, ?, ?, ?);`
+      await db.query(statement, [username, hashPassword(password), email, enabled])
+
+      res.status(200).send()
+    } catch (e) {
+      console.log(e)
+      res.status(400).send()
+    }
+  }
+  doQuery(req, res)
+})
+
+// Update User
+router.patch("/user/users", authToken, (req, res) => {
+  async function doQuery(req, res) {
+    try {
+      // Ensure that the current user has sufficient permissions.
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        throw `Create user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      }
+
+      // Retrieve the update type.
+      const { type, username } = req.body
+      if (!validator.isValidUsername(username)) throw `Admin update user: User ${username} has invalid username format.`
+
+      if (type == "update-user") {
+        const { email, enabled } = req.body
+        if (!validator.isValidEmail(email)) throw `Admin update user: User ${username} has invalid email format.`
+        if (!validator.isValidEnabled(enabled)) throw `Admin update user: User ${username} has invalid enabled format.`
+
+        const statement = `UPDATE user SET user_email=?, user_enabled=? WHERE user_username=?`
+        await db.query(statement, [email, enabled, username])
+      } else if (type == "reset-password") {
+        const { password } = req.body
+        if (!validator.isValidPassword(password)) throw `Admin update user: User ${username} has invalid password format.`
+
+        const statement = `UPDATE user SET user_password=? WHERE user_username=?`
+        await db.query(statement, [hashPassword(password), username])
+      } else {
+        throw `Admin update user: User ${username} has invalid update action.`
+      }
+
+      res.status(200).send()
+    } catch (e) {
+      console.log(e)
+      res.status(400).send()
     }
   }
   doQuery(req, res)

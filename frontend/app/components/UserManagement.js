@@ -4,18 +4,24 @@ import Header from "./Header"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
 
-function AppMenu() {
+// Components
+import UserList from "./UserList"
+import GroupList from "./GroupList"
+
+function UserManagement() {
   const appState = useContext(StateContext)
   const appDispatch = useContext(DispatchContext)
 
   return (
-    <Page title="Application Menu">
+    <Page title="User Management">
       <Header />
       <div>
-        <h1>Application Menu</h1>
+        <h1>User Management</h1>
+        <GroupList />
+        <UserList />
       </div>
     </Page>
   )
 }
 
-export default AppMenu
+export default UserManagement
