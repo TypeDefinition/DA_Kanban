@@ -1,4 +1,5 @@
 import React, { useContext, useState, useEffect } from "react"
+import Select from "react-select"
 import { useImmer } from "use-immer"
 import Axios from "axios"
 import StateContext from "../contexts/StateContext"
@@ -50,8 +51,7 @@ function UserList() {
     }
   }, [])
 
-  async function onCreateUser(event) {
-    event.preventDefault()
+  async function onCreateUser() {
     try {
       const user = {
         username: state.username,
@@ -115,55 +115,78 @@ function UserList() {
     <div>
       <h2>Users</h2>
       <h3>User Creation</h3>
-      <form onSubmit={onCreateUser}>
-        <div>
-          <input
-            onChange={(e) => {
-              setState((draft) => {
-                draft.username = e.target.value
-              })
-            }}
-            name="username"
-            type="text"
-            placeholder="Username"
-            autoComplete="off"
-          />
-          <input
-            onChange={(e) => {
-              setState((draft) => {
-                draft.password = e.target.value
-              })
-            }}
-            name="password"
-            type="password"
-            placeholder="Password"
-            autoComplete="off"
-          />
-          <input
-            onChange={(e) => {
-              setState((draft) => {
-                draft.email = e.target.value
-              })
-            }}
-            name="email"
-            type="email"
-            placeholder="Email"
-            autoComplete="off"
-          />
-          <input
-            onChange={(e) => {
-              setState((draft) => {
-                draft.enabled = e.target.checked
-              })
-            }}
-            name="enabled"
-            type="checkbox"
-          />
-        </div>
-        <div>
-          <button type="submit">Create New User</button>
-        </div>
-      </form>
+      <table border="1">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Enabled</th>
+            <th>Password</th>
+            <th>Create User</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <input
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.username = e.target.value
+                  })
+                }}
+                name="username"
+                type="text"
+                placeholder="Username"
+                autoComplete="off"
+                value={state.username}
+              />
+            </td>
+            <td>
+              <input
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.email = e.target.value
+                  })
+                }}
+                name="email"
+                type="email"
+                placeholder="Email"
+                autoComplete="off"
+                value={state.email}
+              />
+            </td>
+            <td>
+              <input
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.enabled = e.target.checked
+                  })
+                }}
+                name="enabled"
+                type="checkbox"
+                checked={state.enabled}
+              />
+            </td>
+            <input
+              onChange={(e) => {
+                setState((draft) => {
+                  draft.password = e.target.value
+                })
+              }}
+              name="password"
+              type="password"
+              placeholder="Password"
+              autoComplete="off"
+              value={state.password}
+            />
+            <td>
+              <button type="submit" onClick={onCreateUser}>
+                Create User
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
       <h3>User List</h3>
       <table border="1">
         <thead>
@@ -201,9 +224,12 @@ function UserList() {
                     checked={user.enabled}
                     onChange={(e) => {
                       setState((draft) => {
-                        console.log(typeof draft.users[index].enabled)
-                        console.log(typeof e.target.checked)
-                        draft.users[index].enabled = Boolean(e.target.checked)
+                        // Do not allow super admin to be disabled.
+                        if (draft.users[index].username != process.env.USER_SUPER_ADMIN) {
+                          draft.users[index].enabled = Boolean(e.target.checked)
+                        } else {
+                          console.log(`Admin update user: Super admin ${process.env.USER_SUPER_ADMIN} cannot be disabled.`)
+                        }
                       })
                     }}
                   />

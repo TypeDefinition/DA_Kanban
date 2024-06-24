@@ -38,8 +38,7 @@ function GroupList() {
     }
   }, [])
 
-  async function onCreateGroup(event) {
-    event.preventDefault()
+  async function onCreateGroup() {
     try {
       const response = await Axios.post("/user/groups", { group: state.group }, { headers: { Authorization: `Bearer ${appState.token}` } })
 
@@ -58,23 +57,35 @@ function GroupList() {
     <div>
       <h2>Groups</h2>
       <h3>Create Group</h3>
-      <form onSubmit={onCreateGroup}>
-        <div>
-          <input
-            onChange={(e) => {
-              setState((draft) => {
-                draft.group = e.target.value
-              })
-            }}
-            type="text"
-            placeholder="New Group"
-            autoComplete="off"
-          />
-        </div>
-        <div>
-          <button type="submit">Create Group</button>
-        </div>
-      </form>
+      <table border="1">
+        <thead>
+          <tr>
+            <th>Group Name</th>
+            <th>Create Group</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <input
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.group = e.target.value
+                  })
+                }}
+                type="text"
+                placeholder="New Group"
+                autoComplete="off"
+              />
+            </td>
+            <td>
+              <button type="submit" onClick={onCreateGroup}>
+                Create Group
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
       <h3>Group List</h3>
       <table border="1">
         <thead>

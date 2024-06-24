@@ -42,15 +42,43 @@ function authToken(req, res, next) {
   })
 }
 
-async function checkGroup(user, group) {
+async function checkGroup(username, group) {
   try {
     const statement = `SELECT * FROM tagging WHERE tagging_user=? AND tagging_tag=?;`
-    const [rows] = await db.query(statement, [user, group])
-    return 1 == rows.length
+    const [rows] = await db.query(statement, [username, group])
+    const isInGroup = 1 == rows.length
+
+    if (isInGroup) {
+      console.log(`Check group: User ${username} is in group ${group}`)
+    } else {
+      console.log(`Check group: User ${username} is not in group ${group}`)
+    }
+
+    return isInGroup
   } catch (e) {
     console.log(e)
-    return false
   }
+  return false
+}
+
+async function checkEnabled(username) {
+  try {
+    const statement = `SELECT user_enabled FROM user WHERE user_username=?;`
+    const [rows] = await db.query(statement, [username])
+    if (1 != rows.length) throw `Check enabled: User ${username} does not exist.`
+
+    const isEnabled = Boolean(rows[0].user_enabled)
+    if (isEnabled) {
+      console.log(`Check enabled: User ${username} is enabled.`)
+    } else {
+      console.log(`Check enabled: User ${username} is not enabled.`)
+    }
+
+    return isEnabled
+  } catch (e) {
+    console.log(e)
+  }
+  return false
 }
 
 /******************** User ********************/
@@ -88,7 +116,7 @@ router.post("/login", (req, res) => {
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET)
 
       // Return the JWT to the user.
-      console.log(`Login: User ${username} logged in.`)
+      console.log(`Login: User ${username} logged in successfully.`)
       res.status(200).json({
         token,
         username: rows[0].user_username,
@@ -106,6 +134,9 @@ router.post("/login", (req, res) => {
 router.patch("/user/profile", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) throw `Update user: ${req.user.username} is not enabled.`
+
       const username = req.user.username
       const { type } = req.body
 
@@ -138,6 +169,7 @@ router.patch("/user/profile", authToken, (req, res) => {
         throw `Update user: User ${username} has invalid update action.`
       }
 
+      throw `Update user: User ${username} has updated successfully.`
       res.status(200).send()
     } catch (e) {
       console.log(e)
@@ -158,10 +190,14 @@ router.get("/user/groups", authToken, (req, res) => {
         throw `Admin retrieve groups: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
 
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) throw `Admin retrieve groups: ${req.user.username} is not enabled.`
+
       const statement = `SELECT * FROM tag;`
       const [rows] = await db.query(statement)
       const groups = rows.map((element) => element.tag_name)
 
+      console.log(`Admin retrieve groups: Success.`)
       res.status(200).json({ groups })
     } catch (e) {
       console.log(e)
@@ -181,6 +217,9 @@ router.post("/user/groups", authToken, (req, res) => {
         throw `Admin create group: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
 
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) throw `Admin create group: ${req.user.username} is not enabled.`
+
       const { group } = req.body
       if (!validator.isValidGroup(group)) throw `Admin create group: Group ${group} has invalid name format.`
 
@@ -188,6 +227,7 @@ router.post("/user/groups", authToken, (req, res) => {
       const statement = `INSERT INTO tag (tag_name) VALUES (?);`
       await db.query(statement, [group])
 
+      console.log(`Admin create group: Group ${group} created successfully.`)
       res.status(200).send()
     } catch (e) {
       console.log(e)
@@ -197,7 +237,7 @@ router.post("/user/groups", authToken, (req, res) => {
   doQuery(req, res)
 })
 
-// Get all users.
+// Retrieve all users.
 router.get("/user/users", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
@@ -206,6 +246,9 @@ router.get("/user/users", authToken, (req, res) => {
       if (!hasPermission) {
         throw `Admin retrieve users: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
+
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) throw `Admin retrieve users: ${req.user.username} is not enabled.`
 
       const statement = `SELECT user_username, user_email, user_enabled FROM user;`
       const [rows] = await db.query(statement)
@@ -217,6 +260,7 @@ router.get("/user/users", authToken, (req, res) => {
         }
       })
 
+      console.log(`Admin retrieve users: Success.`)
       res.status(200).json({ users })
     } catch (e) {
       {
@@ -238,6 +282,9 @@ router.post("/user/users", authToken, (req, res) => {
         throw `Admin create user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
 
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) throw `Admin create user: ${req.user.username} is not enabled.`
+
       // Retrieve the username, password and email from the request body and validate them.
       const { username, password, email, enabled } = req.body
       if (!validator.isValidUsername(username)) throw `Admin create user: User ${username} has invalid username format.`
@@ -249,6 +296,7 @@ router.post("/user/users", authToken, (req, res) => {
       const statement = `INSERT INTO user (user_username, user_password, user_email, user_enabled) VALUES (?, ?, ?, ?);`
       await db.query(statement, [username, hashPassword(password), email, enabled])
 
+      console.log(`Admin create user: User ${username} created successfully.`)
       res.status(200).send()
     } catch (e) {
       console.log(e)
@@ -265,8 +313,11 @@ router.patch("/user/users", authToken, (req, res) => {
       // Ensure that the current user has sufficient permissions.
       const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
       if (!hasPermission) {
-        throw `Create user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+        throw `Admin update user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
       }
+
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) throw `Admin update user: ${req.user.username} is not enabled.`
 
       // Retrieve the update type.
       const { type, username } = req.body
@@ -277,14 +328,21 @@ router.patch("/user/users", authToken, (req, res) => {
         if (!validator.isValidEmail(email)) throw `Admin update user: User ${username} has invalid email format.`
         if (!validator.isValidEnabled(enabled)) throw `Admin update user: User ${username} has invalid enabled format.`
 
+        // Ensure that the super admin cannot be disabled.
+        if (enabled == false && username == process.env.USER_SUPER_ADMIN) throw `Admin update user: Super admin ${username} cannot be disabled.`
+
         const statement = `UPDATE user SET user_email=?, user_enabled=? WHERE user_username=?`
         await db.query(statement, [email, enabled, username])
+
+        console.log(`Admin update user: User ${username} updated email and enabled successfully.`)
       } else if (type == "reset-password") {
         const { password } = req.body
         if (!validator.isValidPassword(password)) throw `Admin update user: User ${username} has invalid password format.`
 
         const statement = `UPDATE user SET user_password=? WHERE user_username=?`
         await db.query(statement, [hashPassword(password), username])
+
+        console.log(`Admin update user: User ${username} updated password successfully.`)
       } else {
         throw `Admin update user: User ${username} has invalid update action.`
       }

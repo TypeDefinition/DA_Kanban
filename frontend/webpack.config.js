@@ -1,6 +1,8 @@
 const path = require("path")
+const dotenv = require("dotenv-webpack")
 
 module.exports = {
+  plugins: [new dotenv()],
   entry: "./app/Main.js",
   output: {
     publicPath: "/",

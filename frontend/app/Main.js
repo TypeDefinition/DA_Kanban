@@ -19,7 +19,7 @@ import Profile from "./components/Profile"
 import UserManagement from "./components/UserManagement"
 
 // This is the backend URL.
-Axios.defaults.baseURL = "http://localhost:3501"
+Axios.defaults.baseURL = `http://localhost:${process.env.BACKEND_PORT}`
 
 function Main() {
   const cookies = new Cookies()
