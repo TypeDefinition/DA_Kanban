@@ -1,19 +1,15 @@
-import React, { useEffect, useContext } from "react"
+import React, { useContext, useEffect } from "react"
 import { useImmer } from "use-immer"
 import Axios from "axios"
+import Page from "./Page"
+import Header from "./Header"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
-import GroupContext from "../contexts/UserManagementContext"
+import Status from "./Status"
 
-function GroupList() {
+function GroupList({ state, setState }) {
   const appState = useContext(StateContext)
   const appDispatch = useContext(DispatchContext)
-  const userManagementState = useContext(GroupContext)
-
-  const [state, setState] = useImmer({
-    group: null, // New group to be created.
-    groups: [], // Current list of groups.
-  })
 
   // Retrieve groups from backend.
   useEffect(() => {
@@ -27,12 +23,22 @@ function GroupList() {
           },
         })
 
-        setState((draft) => {
-          draft.groups = response.data.groups || []
-          userManagementState.groups = draft.groups.map((element) => {
-            return { value: element, label: element }
+        // Unauthorised access.
+        if (response.status == Status.unauthorised) {
+          setState((draft) => {
+            draft.groups = []
+            draft.users = []
           })
-        })
+          appDispatch({ type: "logout" })
+        }
+
+        // Success.
+        if (response.status == Status.ok) {
+          // Populate group list.
+          setState((draft) => {
+            draft.groups = response.data.groups || []
+          })
+        }
       } catch (e) {
         console.log(e)
       }
@@ -45,15 +51,32 @@ function GroupList() {
 
   async function onCreateGroup() {
     try {
-      const response = await Axios.post("/user/groups", { group: state.group }, { headers: { Authorization: `Bearer ${appState.token}` } })
+      const response = await Axios.post("/user/groups", { group: state.newGroup }, { headers: { Authorization: `Bearer ${appState.token}` } })
 
-      // Throw error if failed.
-      if (response.status != 200) throw `Failed to create group ${state.group}.`
+      // Unauthorised access.
+      if (response.status == Status.unauthorised) {
+        setState((draft) => {
+          draft.groups = []
+          draft.users = []
+        })
+        appDispatch({ type: "logout" })
+      }
 
-      setState((draft) => {
-        draft.groups.push(state.group)
-        userManagementState.groups.push({ value: state.group, label: state.group })
-      })
+      // Standard error.
+      if (response.status == Status.error) {
+        setState((draft) => {
+          draft.newGroupStatus = response.data.message
+        })
+      }
+
+      // Success.
+      if (response.status == Status.ok) {
+        // Append to group list.
+        setState((draft) => {
+          draft.newGroupStatus = response.data.message
+          draft.groups.push(state.newGroup)
+        })
+      }
     } catch (e) {
       console.log(e)
     }
@@ -68,6 +91,7 @@ function GroupList() {
           <tr>
             <th>Group Name</th>
             <th>Create Group</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -76,7 +100,7 @@ function GroupList() {
               <input
                 onChange={(e) => {
                   setState((draft) => {
-                    draft.group = e.target.value
+                    draft.newGroup = e.target.value
                   })
                 }}
                 type="text"
@@ -89,6 +113,7 @@ function GroupList() {
                 Create Group
               </button>
             </td>
+            <td>{state.newGroupStatus}</td>
           </tr>
         </tbody>
       </table>

@@ -1,25 +1,16 @@
-import React, { useContext, useState, useEffect } from "react"
-import Select from "react-select"
+import React, { useContext, useEffect } from "react"
 import { useImmer } from "use-immer"
+import Select from "react-select"
 import Axios from "axios"
+import Page from "./Page"
+import Header from "./Header"
+import Status from "./Status"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
-import UserManagementContext from "../contexts/UserManagementContext"
 
-function UserList() {
+function UserList({ state, setState }) {
   const appState = useContext(StateContext)
   const appDispatch = useContext(DispatchContext)
-  const userManagementState = useContext(UserManagementContext)
-
-  // Create user.
-  const [state, setState] = useImmer({
-    username: "", // New user to be created.
-    password: "",
-    email: "",
-    enabled: true,
-    groups: [],
-    users: [], // Current list of users.
-  })
 
   // Retrieve users from backend.
   useEffect(() => {
@@ -33,8 +24,18 @@ function UserList() {
           },
         })
 
-        setState((draft) => {
-          draft.users =
+        // Unauthorised access.
+        if (response.status == Status.unauthorised) {
+          setState((draft) => {
+            draft.groups = []
+            draft.users = []
+          })
+          appDispatch({ type: "logout" })
+        }
+
+        // Success.
+        if (response.status == Status.ok) {
+          const users =
             response.data.users.map((element) => {
               return {
                 username: element.username,
@@ -42,9 +43,14 @@ function UserList() {
                 email: element.email,
                 enabled: Boolean(element.enabled),
                 groups: element.groups,
+                status: "",
               }
             }) || []
-        })
+
+          setState((draft) => {
+            draft.users = users
+          })
+        }
       } catch (e) {
         console.log(e)
       }
@@ -58,21 +64,40 @@ function UserList() {
   async function onCreateUser() {
     try {
       const user = {
-        username: state.username,
-        password: state.password,
-        email: state.email,
-        enabled: state.enabled,
-        groups: state.groups,
+        username: state.newUsername,
+        password: state.newPassword,
+        email: state.newEmail,
+        enabled: Boolean(state.newEnabled),
+        groups: state.newGroups,
+        status: "",
       }
 
       const response = await Axios.post("/user/users", user, { headers: { Authorization: `Bearer ${appState.token}` } })
 
-      // Throw error if failed.
-      if (response.status != 200) throw `Failed to create user ${state.username}.`
+      // Unauthorised access.
+      if (response.status == Status.unauthorised) {
+        setState((draft) => {
+          draft.groups = []
+          draft.users = []
+        })
+        appDispatch({ type: "logout" })
+      }
 
-      setState((draft) => {
-        draft.users.push(user)
-      })
+      // Standard error.
+      if (response.status == Status.error) {
+        setState((draft) => {
+          draft.newUserStatus = response.data.message
+        })
+      }
+
+      // Success.
+      if (response.status == Status.ok) {
+        // Append to user list.
+        setState((draft) => {
+          draft.newUserStatus = response.data.message
+          draft.users.push(user)
+        })
+      }
     } catch (e) {
       console.log(e)
     }
@@ -90,8 +115,51 @@ function UserList() {
 
       const response = await Axios.patch("/user/users", user, { headers: { Authorization: `Bearer ${appState.token}` } })
 
-      // Throw error if failed.
-      if (response.status != 200) throw `Failed to update user ${state.username}.`
+      // Unauthorised access.
+      if (response.status == Status.unauthorised) {
+        setState((draft) => {
+          draft.groups = []
+          draft.users = []
+        })
+        appDispatch({ type: "logout" })
+      }
+
+      // Standard error.
+      if (response.status == Status.error) {
+        setState((draft) => {
+          draft.users[index].status = response.data.message
+        })
+      }
+
+      // Success.
+      if (response.status == Status.ok) {
+        setState((draft) => {
+          draft.users[index].status = response.data.message
+        })
+
+        // Check if the admin updated himself/herself.
+        if (user.username == appState.username) {
+          const enabled = Boolean(response.data.enabled)
+          const isAdmin = Boolean(response.data.isAdmin)
+          const isAppCreator = Boolean(response.data.isAppCreator)
+          const isPlanCreator = Boolean(response.data.isPlanCreator)
+
+          // User is no longer authorised! Clear all user and group data and log out.
+          if (!enabled) {
+            appDispatch({ type: "logout" })
+            return
+          }
+
+          // Update our global state.
+          appDispatch({
+            type: "update-permissions",
+            email: response.data.email,
+            isAdmin,
+            isAppCreator,
+            isPlanCreator,
+          })
+        }
+      }
     } catch (e) {
       console.log(e)
     }
@@ -107,8 +175,28 @@ function UserList() {
 
       const response = await Axios.patch("/user/users", user, { headers: { Authorization: `Bearer ${appState.token}` } })
 
-      // Throw error if failed.
-      if (response.status != 200) throw `Failed to update user ${state.username}.`
+      // Unauthorised access.
+      if (response.status == Status.unauthorised) {
+        setState((draft) => {
+          draft.groups = []
+          draft.users = []
+        })
+        appDispatch({ type: "logout" })
+      }
+
+      // Standard error.
+      if (response.status == Status.error) {
+        setState((draft) => {
+          draft.users[index].status = response.data.message
+        })
+      }
+
+      // Success.
+      if (response.status == Status.ok) {
+        setState((draft) => {
+          draft.users[index].status = response.data.message
+        })
+      }
     } catch (e) {
       console.log(e)
     }
@@ -127,6 +215,7 @@ function UserList() {
             <th>Groups</th>
             <th>Password</th>
             <th>Create User</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -137,10 +226,10 @@ function UserList() {
                 type="text"
                 placeholder="Username"
                 autoComplete="off"
-                value={state.username}
+                value={state.newUsername}
                 onChange={(e) => {
                   setState((draft) => {
-                    draft.username = e.target.value
+                    draft.newUsername = e.target.value
                   })
                 }}
               />
@@ -151,10 +240,10 @@ function UserList() {
                 type="email"
                 placeholder="Email"
                 autoComplete="off"
-                value={state.email}
+                value={state.newEmail}
                 onChange={(e) => {
                   setState((draft) => {
-                    draft.email = e.target.value
+                    draft.newEmail = e.target.value
                   })
                 }}
               />
@@ -163,45 +252,50 @@ function UserList() {
               <input
                 name="enabled"
                 type="checkbox"
-                checked={state.enabled}
+                checked={state.newEnabled}
                 onChange={(e) => {
                   setState((draft) => {
-                    draft.enabled = e.target.checked
+                    draft.newEnabled = e.target.checked
                   })
                 }}
               />
             </td>
             <td>
               <Select
-                options={userManagementState.groups}
+                options={state.groups.map((group) => {
+                  return { value: group, label: group }
+                })}
                 isMulti
-                value={state.groups.map((group) => {
+                value={state.newGroups.map((group) => {
                   return { value: group, label: group }
                 })}
                 onChange={(e) => {
                   setState((draft) => {
-                    draft.groups = e.map((element) => element.value)
+                    draft.newGroups = e.map((element) => element.value)
                   })
                 }}
               />
             </td>
-            <input
-              onChange={(e) => {
-                setState((draft) => {
-                  draft.password = e.target.value
-                })
-              }}
-              name="password"
-              type="password"
-              placeholder="Password"
-              autoComplete="off"
-              value={state.password}
-            />
+            <td>
+              <input
+                name="password"
+                type="password"
+                placeholder="Password"
+                autoComplete="off"
+                value={state.newPassword}
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.newPassword = e.target.value
+                  })
+                }}
+              />
+            </td>
             <td>
               <button type="submit" onClick={onCreateUser}>
                 Create User
               </button>
             </td>
+            <td>{state.newUserStatus}</td>
           </tr>
         </tbody>
       </table>
@@ -216,6 +310,7 @@ function UserList() {
             <th>Update User</th>
             <th>Password</th>
             <th>Reset Password</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -255,7 +350,9 @@ function UserList() {
                 </td>
                 <td>
                   <Select
-                    options={userManagementState.groups}
+                    options={state.groups.map((group) => {
+                      return { value: group, label: group }
+                    })}
                     isMulti
                     value={user.groups.map((group) => {
                       return { value: group, label: group }
@@ -307,6 +404,7 @@ function UserList() {
                     Reset Password
                   </button>
                 </td>
+                <td>{user.status}</td>
               </tr>
             )
           })}

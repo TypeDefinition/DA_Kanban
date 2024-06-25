@@ -13,10 +13,11 @@ import StateContext from "./contexts/StateContext"
 
 // Components
 import NotFound from "./components/NotFound"
-import Login from "./components/Login"
 import AppMenu from "./components/AppMenu"
 import Profile from "./components/Profile"
 import UserManagement from "./components/UserManagement"
+import ProtectedRoute from "./components/ProtectedRoute"
+import ProtectedAdminRoute from "./components/ProtectedAdminRoute"
 
 // This is the backend URL.
 Axios.defaults.baseURL = `http://localhost:${process.env.BACKEND_PORT}`
@@ -24,68 +25,101 @@ Axios.defaults.baseURL = `http://localhost:${process.env.BACKEND_PORT}`
 function Main() {
   const cookies = new Cookies()
 
-  // Manage state.
-  const initialState = {
+  // Global state.
+  const [state, dispatch] = useImmerReducer(stateReducer, {
     loggedIn: Boolean(cookies.get("token")),
     token: cookies.get("token"),
     username: cookies.get("username"),
     email: cookies.get("email"),
-    // isAdmin: cookies.get("isAdmin"),
-    // isAppCreator: cookies.get("isAppCreator"),
-    // isPlanCreator: cookies.get("isPlanCreator"),
-    isAdmin: true,
-    isAppCreator: true,
-    isPlanCreator: true,
-  }
+    isAdmin: Boolean(cookies.get("isAdmin")),
+    isAppCreator: Boolean(cookies.get("isAppCreator")),
+    isPlanCreator: Boolean(cookies.get("isPlanCreator")),
+  })
 
-  function ourReducer(draft, action) {
+  function stateReducer(draft, action) {
     switch (action.type) {
       case "login":
         draft.loggedIn = true
         draft.token = action.token
         draft.username = action.username
         draft.email = action.email
+        draft.isAdmin = action.isAdmin
+        draft.isAppCreator = action.isAppCreator
+        draft.isPlanCreator = action.isPlanCreator
         break
       case "logout":
+        console.log("knnccb")
         draft.loggedIn = false
         draft.token = null
         draft.username = null
         draft.email = null
+        draft.isAdmin = false
+        draft.isAppCreator = false
+        draft.isPlanCreator = false
         break
-      case "updateProfile":
+      case "update-email":
         draft.email = action.email
+        break
+      case "update-permissions":
+        draft.email = action.email
+        draft.isAdmin = action.isAdmin
+        draft.isAppCreator = action.isAppCreator
+        draft.isPlanCreator = action.isPlanCreator
         break
     }
   }
-  const [state, dispatch] = useImmerReducer(ourReducer, initialState)
 
   // Manage cookies.
   useEffect(() => {
     if (state.loggedIn) {
-      cookies.set("token", state.token)
-      cookies.set("username", state.username)
-      cookies.set("email", state.email)
-      cookies.set("isAdmin", state.isAdmin)
-      cookies.set("isAppCreator", state.isAppCreator)
-      cookies.set("isPlanCreator", state.isPlanCreator)
+      console.log("set cookies")
+      cookies.set("token", state.token, { path: "/" })
+      cookies.set("username", state.username, { path: "/" })
+      cookies.set("email", state.email, { path: "/" })
+      cookies.set("isAdmin", state.isAdmin, { path: "/" })
+      cookies.set("isAppCreator", state.isAppCreator, { path: "/" })
+      cookies.set("isPlanCreator", state.isPlanCreator, { path: "/" })
     } else {
-      cookies.remove("token")
-      cookies.remove("username")
-      cookies.remove("email")
-      cookies.remove("isAdmin")
-      cookies.remove("isAppCreator")
-      cookies.remove("isPlanCreator")
+      console.log("remove cookies", { path: "/" })
+      cookies.remove("token", { path: "/" })
+      cookies.remove("username", { path: "/" })
+      cookies.remove("email", { path: "/" })
+      cookies.remove("isAdmin", { path: "/" })
+      cookies.remove("isAppCreator", { path: "/" })
+      cookies.remove("isPlanCreator", { path: "/" })
     }
-  }, [state.loggedIn])
+  }, [state])
 
   return (
     <StateContext.Provider value={state}>
       <DispatchContext.Provider value={dispatch}>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={state.loggedIn ? <AppMenu /> : <Login />} />
-            <Route path="/user/profile" element={<Profile />} />
-            <Route path="/user/management" element={<UserManagement />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <AppMenu />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user/management"
+              element={
+                <ProtectedAdminRoute>
+                  <UserManagement />
+                </ProtectedAdminRoute>
+              }
+            />
+            <Route path="/not-found" element={<NotFound />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

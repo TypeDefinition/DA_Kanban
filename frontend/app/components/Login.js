@@ -7,6 +7,7 @@ function Login() {
   const appDispatch = useContext(DispatchContext)
   const [username, setUsername] = useState()
   const [password, setPassword] = useState()
+  const [status, setStatus] = useState("")
 
   async function onLogin(event) {
     event.preventDefault()
@@ -20,9 +21,13 @@ function Login() {
         token: response.data.token,
         username: response.data.username,
         email: response.data.email,
+        isAdmin: response.data.isAdmin,
+        isAppCreator: response.data.isAppCreator,
+        isPlanCreator: response.data.isPlanCreator,
       })
     } catch (e) {
       console.log(e)
+      setStatus("Invalid username or password.")
     }
   }
 
@@ -56,6 +61,9 @@ function Login() {
             <button type="submit">Log In</button>
           </div>
         </form>
+        <p>
+          <font color="red">{status}</font>
+        </p>
       </div>
     </Page>
   )

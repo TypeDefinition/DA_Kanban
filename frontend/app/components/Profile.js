@@ -2,6 +2,7 @@ import React, { useState, useContext } from "react"
 import Axios from "axios"
 import Page from "./Page"
 import Header from "./Header"
+import Status from "./Status"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
 
@@ -12,6 +13,7 @@ function Profile() {
   // Update password and email.
   const [password, setPassword] = useState()
   const [email, setEmail] = useState()
+  const [status, setStatus] = useState("")
 
   async function onUpdatePassword(event) {
     event.preventDefault()
@@ -26,8 +28,21 @@ function Profile() {
         }
       )
 
-      // Throw error if failed.
-      if (response.status != 200) throw `User ${appState.username}: Failed to update password.`
+      // Unauthorised access.
+      if (response.status == Status.unauthorised) {
+        appDispatch({ type: "logout" })
+      }
+
+      // Standard error.
+      if (response.status == Status.error) {
+        console.log(response.data.message)
+        setStatus(response.data.message)
+      }
+
+      // Success.
+      if (response.status == Status.ok) {
+        setStatus(response.data.message)
+      }
     } catch (e) {
       console.log(e)
     }
@@ -36,7 +51,6 @@ function Profile() {
   async function onUpdateEmail(event) {
     event.preventDefault()
     try {
-      console.log(appState.token)
       const response = await Axios.patch(
         "/user/profile",
         { type: "email", email },
@@ -47,11 +61,21 @@ function Profile() {
         }
       )
 
-      // Throw error if failed.
-      if (response.status != 200) throw `User ${appState.username}: Failed to update email.`
+      // Unauthorised access.
+      if (response.status == Status.unauthorised) {
+        appDispatch({ type: "logout" })
+      }
 
-      // Update state if success.
-      appDispatch({ type: "updateProfile", email })
+      // Standard error.
+      if (response.status == Status.error) {
+        setStatus(response.data.message)
+      }
+
+      // Success.
+      if (response.status == Status.ok) {
+        setStatus(response.data.message)
+        appDispatch({ type: "update-email", email })
+      }
     } catch (e) {
       console.log(e)
     }
@@ -97,6 +121,9 @@ function Profile() {
             <button type="submit">Update Email</button>
           </div>
         </form>
+        <p>
+          <font color="red">{status}</font>
+        </p>
       </div>
     </Page>
   )

@@ -6,6 +6,7 @@ const bcrypt = require("bcryptjs")
 // Internal Imports
 const db = require("./database")
 const validator = require("./validator")
+const status = require("./status")
 
 const router = express.Router()
 
@@ -18,21 +19,21 @@ function authToken(req, res, next) {
   const token = req.headers.authorization.split(" ")[1] // Note: authorization must be in small letters.
   if (token == null) {
     console.log("Authenticate token: Null token.")
-    return res.status(400).send()
+    return res.status(status.unauthorised).send()
   }
 
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user /*What we passed in when signing the token.*/) => {
     if (err) {
       console.log("Authenticate token: Invalid token.")
-      return res.status(400).send()
+      return res.status(status.unauthorised).send()
     }
     if (req.connection.remoteAddress != user.ipAddress) {
       console.log(`Authenticate token: User ${user.username} IP address mismatch.`)
-      return res.status(400).send()
+      return res.status(status.unauthorised).send()
     }
     if (req.get("User-Agent") != user.userAgent) {
       console.log(`Authenticate token: User ${user.username} user agent mismatch.`)
-      return res.status(400).send()
+      return res.status(status.unauthorised).send()
     }
 
     // Pass on the user object to the request.
@@ -46,27 +47,18 @@ async function checkGroup(username, group) {
   try {
     const statement = `SELECT * FROM tagging WHERE tagging_user=? AND tagging_tag=?;`
     const [rows] = await db.query(statement, [username, group])
-    const isInGroup = 1 == rows.length
-
-    if (isInGroup) {
-      console.log(`Check group: User ${username} is in group ${group}`)
-    } else {
-      console.log(`Check group: User ${username} is not in group ${group}`)
-    }
-
-    return isInGroup
+    return 1 == rows.length
   } catch (e) {
     console.log(e)
     return false
   }
 }
 
-async function getGroups(username) {
+async function getUserGroups(username) {
   try {
     const statement = `SELECT * FROM tagging WHERE tagging_user=?;`
     const [rows] = await db.query(statement, [username])
-    const groups = rows.map((element) => element.tagging_tag)
-    return groups
+    return rows.map((element) => element.tagging_tag)
   } catch (e) {
     console.log(e)
     return []
@@ -86,6 +78,7 @@ async function doesGroupsExist(groups) {
     if ("string" != typeof groups[i]) return false
     if (!groupSet.has(groups[i])) return false
   }
+
   return true
 }
 
@@ -95,14 +88,7 @@ async function checkEnabled(username) {
     const [rows] = await db.query(statement, [username])
     if (1 != rows.length) throw `Check enabled: User ${username} does not exist.`
 
-    const isEnabled = Boolean(rows[0].user_enabled)
-    if (isEnabled) {
-      console.log(`Check enabled: User ${username} is enabled.`)
-    } else {
-      console.log(`Check enabled: User ${username} is not enabled.`)
-    }
-
-    return isEnabled
+    return Boolean(rows[0].user_enabled)
   } catch (e) {
     console.log(e)
   }
@@ -131,8 +117,11 @@ router.post("/login", (req, res) => {
       const validPassword = await bcrypt.compare(password, rows[0].user_password)
       if (!validPassword) throw `Login: User ${username} has invalid password.`
 
-      const ipAddress = req.connection.remoteAddress // What is the user's IP address?
-      const userAgent = req.get("User-Agent") // What is the user's browser?
+      // What is the user's IP address and browser?
+      const ipAddress = req.connection.remoteAddress
+      const userAgent = req.get("User-Agent")
+
+      // Create user object.
       const user = {
         username: rows[0].user_username,
         email: rows[0].user_email,
@@ -143,16 +132,54 @@ router.post("/login", (req, res) => {
       // Sign a JSON Web Token (JWT).
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET)
 
+      // Check for hardcoded groups.
+      const isAdmin = await checkGroup(user.username, process.env.GROUP_ADMIN)
+      const isAppCreator = await checkGroup(user.username, process.env.GROUP_APP_CREATOR)
+      const isPlanCreator = await checkGroup(user.username, process.env.GROUP_PLAN_CREATOR)
+
       // Return the JWT to the user.
       console.log(`Login: User ${username} logged in successfully.`)
-      res.status(200).json({
+
+      res.status(status.ok).json({
+        message: "Login successful.",
         token,
         username: rows[0].user_username,
         email: rows[0].user_email,
+        isAdmin,
+        isAppCreator,
+        isPlanCreator,
       })
     } catch (e) {
       console.log(e)
-      res.status(400).send()
+      res.status(status.unauthorised).send()
+    }
+  }
+  doQuery(req, res)
+})
+
+// Get hardcoded groups of a user.
+router.get("/user/authenticate", authToken, (req, res) => {
+  async function doQuery(req, res) {
+    const username = req.user.username
+    try {
+      res.status(status.ok).json({
+        message: "Authentication checked.",
+        username,
+        enabled: await checkEnabled(username),
+        isAdmin: await checkGroup(username, process.env.GROUP_ADMIN),
+        isAppCreator: await checkGroup(username, process.env.GROUP_APP_CREATOR),
+        isPlanCreator: await checkGroup(username, process.env.GROUP_PLAN_CREATOR),
+      })
+    } catch (e) {
+      console.log(e)
+      res.status(status.unauthorised).json({
+        message: "Permission denied.",
+        username,
+        enabled: false,
+        isAdmin: false,
+        isAppCreator: false,
+        isPlanCreator: false,
+      })
     }
   }
   doQuery(req, res)
@@ -162,8 +189,13 @@ router.post("/login", (req, res) => {
 router.patch("/user/profile", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
+      // Ensure that the current user has sufficient permissions.
       const isEnabled = await checkEnabled(req.user.username)
-      if (!isEnabled) throw `Update user: ${req.user.username} is not enabled.`
+      if (!isEnabled) {
+        console.log(`Update user: ${req.user.username} is not enabled.`)
+        res.status(status.unauthorised).send()
+        return
+      }
 
       const username = req.user.username
       const { type } = req.body
@@ -171,37 +203,58 @@ router.patch("/user/profile", authToken, (req, res) => {
       // Update email.
       if (type == "email") {
         const { email } = req.body
-        if (!validator.isValidEmail(email)) throw `Update user: User ${username} has invalid email format.`
+        if (!validator.isValidEmail(email)) {
+          console.log(`Update user: User ${username} has invalid email format.`)
+          res.status(status.error).json({ message: "Invalid email format." })
+          return
+        }
 
         const statement = `UPDATE user SET user_email=? WHERE user_username=?;`
         const [result] = await db.query(statement, [email, username])
 
-        // Throw error if failed.
-        if (result.affectedRows != 1) throw `Update user: User ${username} does not exist.`
+        // Check if successful.
+        if (result.affectedRows != 1) {
+          console.log(`Update user: User ${username} does not exist.`)
+          res.status(status.error).json({ message: "User does not exist." })
+          return
+        }
+
+        console.log(`Update user: User ${username} has updated email successfully.`)
+        res.status(status.ok).json({ message: "Email updated." })
       }
 
       // Update password.
       else if (type == "password") {
         const { password } = req.body
-        if (!validator.isValidPassword(password)) throw `Update user: User ${username} has invalid password format.`
+        if (!validator.isValidPassword(password)) {
+          console.log(`Update user: User ${username} has invalid password format.`)
+          res.status(status.error).json({ message: "Invalid password format. Length 8 to 10. Only alphanumeric and special characters." })
+          return
+        }
 
         // Encrypt the password so that we are not storing plaintext.
         const statement = `UPDATE user SET user_password=? WHERE user_username=?;`
         const [result] = await db.query(statement, [hashPassword(password), username])
 
-        // Throw error if failed.
-        if (result.affectedRows != 1) throw `Update user: User ${username} does not exist.`
-      }
-      // Invalid action.
-      else {
-        throw `Update user: User ${username} has invalid update action.`
+        // Check if successful.
+        if (result.affectedRows != 1) {
+          console.log(`Update user: User ${username} does not exist.`)
+          res.status(status.error).json({ message: "User does not exist." })
+          return
+        }
+
+        console.log(`Update user: User ${username} has updated password successfully.`)
+        res.status(status.ok).json({ message: "Password updated." })
       }
 
-      console.log(`Update user: User ${username} has updated successfully.`)
-      res.status(200).send()
+      // Invalid action.
+      else {
+        console.log(`Update user: User ${username} has invalid update action.`)
+        res.status(status.error).json({ message: "Invalid action." })
+      }
     } catch (e) {
       console.log(e)
-      res.status(400).send()
+      res.status(status.error).json({ message: "Unknown error." })
     }
   }
   doQuery(req, res)
@@ -213,23 +266,29 @@ router.get("/user/groups", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
       // Ensure that the current user has sufficient permissions.
-      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
-      if (!hasPermission) {
-        throw `Admin retrieve groups: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) {
+        console.log(`Admin retrieve groups: ${req.user.username} is not enabled.`)
+        res.status(status.unauthorised).send()
+        return
       }
 
-      const isEnabled = await checkEnabled(req.user.username)
-      if (!isEnabled) throw `Admin retrieve groups: ${req.user.username} is not enabled.`
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        console.log(`Admin retrieve groups: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`)
+        res.status(status.unauthorised).send()
+        return
+      }
 
       const statement = `SELECT * FROM tag;`
       const [rows] = await db.query(statement)
       const groups = rows.map((element) => element.tag_name)
 
       console.log(`Admin retrieve groups: Success.`)
-      res.status(200).json({ groups })
+      res.status(status.ok).json({ message: "Fetch groups success.", groups })
     } catch (e) {
       console.log(e)
-      res.status(400).send()
+      res.status(status.error).json({ message: "Unknown error." })
     }
   }
   doQuery(req, res)
@@ -240,26 +299,38 @@ router.post("/user/groups", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
       // Ensure that the current user has sufficient permissions.
-      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
-      if (!hasPermission) {
-        throw `Admin create group: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) {
+        console.log(`Admin create group: ${req.user.username} is not enabled.`)
+        res.status(status.unauthorised).send()
+        return
       }
 
-      const isEnabled = await checkEnabled(req.user.username)
-      if (!isEnabled) throw `Admin create group: ${req.user.username} is not enabled.`
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        console.log(`Admin create group: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`)
+        res.status(status.unauthorised).send()
+        return
+      }
 
       const { group } = req.body
-      if (!validator.isValidGroup(group)) throw `Admin create group: Group ${group} has invalid name format.`
+      if (!validator.isValidGroup(group)) {
+        console.log(`Admin create group: Group ${group} has invalid name format.`)
+        res.status(status.error).json({ message: "Invalid group format. Group name length must be 4 to 32, and only alphanumeric and underscore is allowed." })
+        return
+      }
 
       // Insert into database.
       const statement = `INSERT INTO tag (tag_name) VALUES (?);`
       await db.query(statement, [group])
 
       console.log(`Admin create group: Group ${group} created successfully.`)
-      res.status(200).send()
+      res.status(status.ok).json({ message: "Group created." })
     } catch (e) {
       console.log(e)
-      res.status(400).send()
+
+      // At this point, most likely is error due to duplicate.
+      res.status(status.error).json({ message: "Group already exists." })
     }
   }
   doQuery(req, res)
@@ -270,13 +341,19 @@ router.get("/user/users", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
       // Ensure that the current user has sufficient permissions.
-      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
-      if (!hasPermission) {
-        throw `Admin retrieve users: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) {
+        console.log(`Admin retrieve users: ${req.user.username} is not enabled.`)
+        res.status(status.unauthorised).send()
+        return
       }
 
-      const isEnabled = await checkEnabled(req.user.username)
-      if (!isEnabled) throw `Admin retrieve users: ${req.user.username} is not enabled.`
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        console.log(`Admin retrieve users: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`)
+        res.status(status.unauthorised).send()
+        return
+      }
 
       // Retrieve user details.
       const userStatement = `SELECT user_username, user_email, user_enabled FROM user;`
@@ -313,11 +390,11 @@ router.get("/user/users", authToken, (req, res) => {
       }
 
       console.log(`Admin retrieve users: Success.`)
-      res.status(200).json({ users })
+      res.status(status.ok).json({ users })
     } catch (e) {
       {
         console.log(e)
-        res.status(400).send()
+        res.status(status.error).json({ message: "Unknown error." })
       }
     }
   }
@@ -329,24 +406,54 @@ router.post("/user/users", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
       // Ensure that the current user has sufficient permissions.
-      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
-      if (!hasPermission) {
-        throw `Admin create user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) {
+        console.log(`Admin create user: ${req.user.username} is not enabled.`)
+        res.status(status.unauthorised).send()
+        return
       }
 
-      const isEnabled = await checkEnabled(req.user.username)
-      if (!isEnabled) throw `Admin create user: ${req.user.username} is not enabled.`
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        console.log(`Admin create user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`)
+        res.status(status.unauthorised).send()
+        return
+      }
 
       // Retrieve the username, password and email from the request body and validate them.
       const { username, password, email, enabled, groups } = req.body
-      if (!validator.isValidUsername(username)) throw `Admin create user: User ${username} has invalid username format.`
-      if (!validator.isValidPassword(password)) throw `Admin create user: User ${username} has invalid password format.`
-      if (!validator.isValidEmail(email)) throw `Admin create user: User ${username} has invalid email format.`
-      if (!validator.isValidEnabled(enabled)) throw `Admin create user: User ${username} has invalid enabled format.`
+
+      if (!validator.isValidUsername(username)) {
+        console.log(`Admin create user: User ${username} has invalid username format.`)
+        res.status(status.error).json({ message: "Invalid username format. Length 4 to 32. Only alphanumeric and underscore." })
+        return
+      }
+
+      if (!validator.isValidPassword(password)) {
+        console.log(`Admin create user: User ${username} has invalid password format.`)
+        res.status(status.error).json({ message: "Invalid password format. Length 8 to 10. Only alphanumeric and special characters." })
+        return
+      }
+
+      if (!validator.isValidEmail(email)) {
+        console.log(`Admin create user: User ${username} has invalid email format.`)
+        res.status(status.error).json({ message: "Invalid email format." })
+        return
+      }
+
+      if (!validator.isValidEnabled(enabled)) {
+        console.log(`Admin create user: User ${username} has invalid enabled format.`)
+        res.status(status.error).json({ message: "Invalid enabled format." })
+        return
+      }
 
       // Ensure that the groups exist.
       const groupsExist = await doesGroupsExist(groups)
-      if (!groupsExist) throw `Admin create user: User ${username} has invalid group.`
+      if (!groupsExist) {
+        console.log(`Admin create user: User ${username} has invalid groups.`)
+        res.status(status.error).json({ message: "Invalid groups." })
+        return
+      }
 
       // Insert into database.
       await db.query(`INSERT INTO user (user_username, user_password, user_email, user_enabled) VALUES (?, ?, ?, ?);`, [username, hashPassword(password), email, enabled])
@@ -355,10 +462,12 @@ router.post("/user/users", authToken, (req, res) => {
       }
 
       console.log(`Admin create user: User ${username} created successfully.`)
-      res.status(200).send()
+      res.status(status.ok).json({ message: "User created." })
     } catch (e) {
       console.log(e)
-      res.status(400).send()
+
+      // At this point, most likely is error due to duplicate.
+      res.status(status.error).json({ message: "Username already exists." })
     }
   }
   doQuery(req, res)
@@ -369,35 +478,57 @@ router.patch("/user/users", authToken, (req, res) => {
   async function doQuery(req, res) {
     try {
       // Ensure that the current user has sufficient permissions.
-      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
-      if (!hasPermission) {
-        throw `Admin update user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`
+      const isEnabled = await checkEnabled(req.user.username)
+      if (!isEnabled) {
+        console.log(`Admin update user: ${req.user.username} is not enabled.`)
+        res.status(status.unauthorised).send()
+        return
       }
 
-      const isEnabled = await checkEnabled(req.user.username)
-      if (!isEnabled) throw `Admin update user: ${req.user.username} is not enabled.`
+      const hasPermission = await checkGroup(req.user.username, process.env.GROUP_ADMIN)
+      if (!hasPermission) {
+        console.log(`Admin update user: ${req.user.username} is not an ${process.env.GROUP_ADMIN}.`)
+        res.status(status.unauthorised).send()
+        return
+      }
 
       // Retrieve the update type.
       const { type, username } = req.body
-      if (!validator.isValidUsername(username)) throw `Admin update user: User ${username} has invalid username format.`
 
       if (type == "update-user") {
         const { email, enabled, groups } = req.body
-        if (!validator.isValidEmail(email)) throw `Admin update user: User ${username} has invalid email format.`
-        if (!validator.isValidEnabled(enabled)) throw `Admin update user: User ${username} has invalid enabled format.`
+        if (!validator.isValidEmail(email)) {
+          console.log(`Admin update user: User ${username} has invalid email format.`)
+          res.status(status.error).json({ message: "Invalid email format." })
+          return
+        }
+
+        if (!validator.isValidEnabled(enabled)) {
+          console.log(`Admin update user: User ${username} has invalid enabled format.`)
+          res.status(status.error).json({ message: "Invalid enabled format." })
+          return
+        }
 
         // Ensure that the groups exist.
         const groupsExist = await doesGroupsExist(groups)
-        if (!groupsExist) throw `Admin update user: User ${username} has invalid group.`
+        if (!groupsExist) {
+          console.log(`Admin update user: User ${username} has invalid groups.`)
+          res.status(status.error).json({ message: "Invalid groups." })
+          return
+        }
 
         // Ensure that the super admin cannot be disabled.
-        if (enabled == false && username == process.env.USER_SUPER_ADMIN) throw `Admin update user: Super admin ${username} cannot be disabled.`
+        if (enabled == false && username == process.env.USER_SUPER_ADMIN) {
+          console.log(`Admin update user: Super admin ${username} cannot be disabled.`)
+          res.status(status.error).json({ message: "Super admin cannot be disabled." })
+          return
+        }
 
         // Update user in database.
         await db.query(`UPDATE user SET user_email=?, user_enabled=? WHERE user_username=?`, [email, enabled, username])
 
         // Groups to remove.
-        const currentGroups = await getGroups(username)
+        const currentGroups = await getUserGroups(username)
         const removeGroupsSet = new Set()
         for (let i = 0; i < currentGroups.length; ++i) {
           removeGroupsSet.add(currentGroups[i])
@@ -414,9 +545,11 @@ router.patch("/user/users", authToken, (req, res) => {
           }
         }
 
-        // Ensure that the super admin cannot remove the admin role.
+        // Ensure that the super admin cannot remove the admin group.
         if (username == process.env.USER_SUPER_ADMIN && removeGroupsSet.has(process.env.GROUP_ADMIN)) {
-          throw `Admin update user: User ${username} is super admin and cannot remove ${process.env.GROUP_ADMIN} role.`
+          console.log(`Admin update user: User ${username} is super admin and cannot remove ${process.env.GROUP_ADMIN} role.`)
+          res.status(status.error).json({ message: "Super admin cannot have ${process.env.GROUP_ADMIN} group removed." })
+          return
         }
 
         // Delete unwanted groups from database.
@@ -429,23 +562,43 @@ router.patch("/user/users", authToken, (req, res) => {
           await db.query(`INSERT INTO tagging (tagging_user, tagging_tag) VALUES (?, ?);`, [username, group])
         }
 
+        // Send response.
+        res.status(status.ok).json({
+          message: "User details updated successfully.",
+          username,
+          email,
+          groups,
+          enabled: await checkEnabled(username),
+          isAdmin: groups.includes(process.env.GROUP_ADMIN), // O(n) time search, but number of groups is usually small, so who cares?
+          isAppCreator: groups.includes(process.env.GROUP_APP_CREATOR),
+          isPlanCreator: groups.includes(process.env.GROUP_PLAN_CREATOR),
+        })
+
         console.log(`Admin update user: User ${username} updated successfully.`)
       } else if (type == "reset-password") {
         const { password } = req.body
-        if (!validator.isValidPassword(password)) throw `Admin update user: User ${username} has invalid password format.`
+        if (!validator.isValidPassword(password)) {
+          console.log(`Admin update user: User ${username} has invalid password format.`)
+          res.status(status.error).json({ message: "Invalid password format. Length 8 to 10. Only alphanumeric and special characters." })
+          return
+        }
 
         const statement = `UPDATE user SET user_password=? WHERE user_username=?`
         await db.query(statement, [hashPassword(password), username])
 
         console.log(`Admin update user: User ${username} updated password successfully.`)
+
+        // Send response.
+        res.status(status.ok).json({
+          message: "User password updated successfully.",
+          username,
+        })
       } else {
         throw `Admin update user: User ${username} has invalid update action.`
       }
-
-      res.status(200).send()
     } catch (e) {
       console.log(e)
-      res.status(400).send()
+      res.status(status.error).json({ message: "Unknown error." })
     }
   }
   doQuery(req, res)

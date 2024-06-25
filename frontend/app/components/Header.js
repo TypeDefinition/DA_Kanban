@@ -21,18 +21,22 @@ function Header() {
         </button>{" "}
         <button
           onClick={() => {
-            navigate("/user/management")
-          }}
-        >
-          User Management
-        </button>{" "}
-        <button
-          onClick={() => {
             navigate("/user/profile")
           }}
         >
           My Profile
         </button>{" "}
+        {appState.isAdmin && (
+          <>
+            <button
+              onClick={() => {
+                navigate("/user/management")
+              }}
+            >
+              User Management
+            </button>{" "}
+          </>
+        )}
         <button
           onClick={() => {
             appDispatch({ type: "logout" })

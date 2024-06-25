@@ -1,30 +1,37 @@
-import React, { useContext } from "react"
+import React from "react"
+import { useImmer } from "use-immer"
 import Page from "./Page"
 import Header from "./Header"
-import StateContext from "../contexts/StateContext"
-import DispatchContext from "../contexts/DispatchContext"
-import UserManagementContext from "../contexts/UserManagementContext"
-
-// Components
-import UserList from "./UserList"
 import GroupList from "./GroupList"
+import UserList from "./UserList"
 
 function UserManagement() {
-  const appState = useContext(StateContext)
-  const appDispatch = useContext(DispatchContext)
-  const userManagementState = { groups: [] }
+  const [state, setState] = useImmer({
+    // Create group.
+    newGroup: "",
+    newGroupStatus: "",
+    // Create user.
+    newUsername: "",
+    newPassword: "",
+    newEmail: "",
+    newEnabled: true,
+    newGroups: [],
+    newUserStatus: "",
+    // Existing groups.
+    groups: [],
+    // Existing users.
+    users: [],
+  })
 
   return (
-    <UserManagementContext.Provider value={userManagementState}>
-      <Page title="User Management">
-        <Header />
-        <div>
-          <h1>User Management</h1>
-          <GroupList />
-          <UserList />
-        </div>
-      </Page>
-    </UserManagementContext.Provider>
+    <Page title="User Management">
+      <Header />
+      <div>
+        <h1>User Management</h1>
+        <GroupList state={state} setState={setState} />
+        <UserList state={state} setState={setState} />
+      </div>
+    </Page>
   )
 }
 

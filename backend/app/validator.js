@@ -2,7 +2,7 @@ module.exports.isValidUsername = (username) => {
   if (!username) return false
   if ("string" !== typeof username) return false
 
-  // 4 to 32 characters, letters and underscore.
+  // 4 to 32 characters, alphanumeric and underscore.
   const regex = /^[a-zA-Z0-9_]{4,32}$/
   return regex.test(username)
 }
@@ -17,11 +17,10 @@ module.exports.isValidPassword = (password) => {
 }
 
 module.exports.isValidEmail = (email) => {
-  if (!email) return false
-  if ("string" !== typeof email) return false
+  if (!email) return true // Allow empty email.
 
   const regex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-  return regex.test(email)
+  return "string" === typeof email && regex.test(email)
 }
 
 module.exports.isValidEnabled = (enabled) => {
