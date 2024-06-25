@@ -1,5 +1,5 @@
 // External Imports
-import React, { useEffect, useState, useReducer, act } from "react"
+import React, { useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import { BrowserRouter, Routes, Route } from "react-router-dom"
 import { useImmerReducer } from "use-immer"
@@ -37,6 +37,7 @@ function Main() {
     isAppCreator: true,
     isPlanCreator: true,
   }
+
   function ourReducer(draft, action) {
     switch (action.type) {
       case "login":

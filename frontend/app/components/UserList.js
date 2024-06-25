@@ -4,17 +4,20 @@ import { useImmer } from "use-immer"
 import Axios from "axios"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
+import UserManagementContext from "../contexts/UserManagementContext"
 
 function UserList() {
   const appState = useContext(StateContext)
   const appDispatch = useContext(DispatchContext)
+  const userManagementState = useContext(UserManagementContext)
 
   // Create user.
   const [state, setState] = useImmer({
-    username: null, // New user to be created.
-    password: null,
-    email: null,
+    username: "", // New user to be created.
+    password: "",
+    email: "",
     enabled: true,
+    groups: [],
     users: [], // Current list of users.
   })
 
@@ -38,6 +41,7 @@ function UserList() {
                 password: null,
                 email: element.email,
                 enabled: Boolean(element.enabled),
+                groups: element.groups,
               }
             }) || []
         })
@@ -58,6 +62,7 @@ function UserList() {
         password: state.password,
         email: state.email,
         enabled: state.enabled,
+        groups: state.groups,
       }
 
       const response = await Axios.post("/user/users", user, { headers: { Authorization: `Bearer ${appState.token}` } })
@@ -80,10 +85,8 @@ function UserList() {
         username: state.users[index].username,
         email: state.users[index].email,
         enabled: state.users[index].enabled,
+        groups: state.users[index].groups,
       }
-
-      console.log(index)
-      console.log(user.enabled)
 
       const response = await Axios.patch("/user/users", user, { headers: { Authorization: `Bearer ${appState.token}` } })
 
@@ -121,6 +124,7 @@ function UserList() {
             <th>Username</th>
             <th>Email</th>
             <th>Enabled</th>
+            <th>Groups</th>
             <th>Password</th>
             <th>Create User</th>
           </tr>
@@ -129,42 +133,56 @@ function UserList() {
           <tr>
             <td>
               <input
-                onChange={(e) => {
-                  setState((draft) => {
-                    draft.username = e.target.value
-                  })
-                }}
                 name="username"
                 type="text"
                 placeholder="Username"
                 autoComplete="off"
                 value={state.username}
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.username = e.target.value
+                  })
+                }}
               />
             </td>
             <td>
               <input
-                onChange={(e) => {
-                  setState((draft) => {
-                    draft.email = e.target.value
-                  })
-                }}
                 name="email"
                 type="email"
                 placeholder="Email"
                 autoComplete="off"
                 value={state.email}
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.email = e.target.value
+                  })
+                }}
               />
             </td>
             <td>
               <input
+                name="enabled"
+                type="checkbox"
+                checked={state.enabled}
                 onChange={(e) => {
                   setState((draft) => {
                     draft.enabled = e.target.checked
                   })
                 }}
-                name="enabled"
-                type="checkbox"
-                checked={state.enabled}
+              />
+            </td>
+            <td>
+              <Select
+                options={userManagementState.groups}
+                isMulti
+                value={state.groups.map((group) => {
+                  return { value: group, label: group }
+                })}
+                onChange={(e) => {
+                  setState((draft) => {
+                    draft.groups = e.map((element) => element.value)
+                  })
+                }}
               />
             </td>
             <input
@@ -194,6 +212,7 @@ function UserList() {
             <th>Username</th>
             <th>Email</th>
             <th>Enabled</th>
+            <th>Groups</th>
             <th>Update User</th>
             <th>Password</th>
             <th>Reset Password</th>
@@ -229,6 +248,28 @@ function UserList() {
                           draft.users[index].enabled = Boolean(e.target.checked)
                         } else {
                           console.log(`Admin update user: Super admin ${process.env.USER_SUPER_ADMIN} cannot be disabled.`)
+                        }
+                      })
+                    }}
+                  />
+                </td>
+                <td>
+                  <Select
+                    options={userManagementState.groups}
+                    isMulti
+                    value={user.groups.map((group) => {
+                      return { value: group, label: group }
+                    })}
+                    onChange={(e) => {
+                      setState((draft) => {
+                        // Do not allow super admin to remove admin role.
+                        const assignedGroups = e.map((element) => element.value)
+                        const isSuperAdmin = draft.users[index].username == process.env.USER_SUPER_ADMIN
+                        const inAdminGroup = assignedGroups.includes(process.env.GROUP_ADMIN)
+                        if (isSuperAdmin && !inAdminGroup) {
+                          console.log(`Admin update user: Super admin ${process.env.USER_SUPER_ADMIN} must be in ${process.env.GROUP_ADMIN} group.`)
+                        } else {
+                          draft.users[index].groups = assignedGroups
                         }
                       })
                     }}

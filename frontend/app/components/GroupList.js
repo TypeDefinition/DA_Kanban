@@ -3,10 +3,12 @@ import { useImmer } from "use-immer"
 import Axios from "axios"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
+import GroupContext from "../contexts/UserManagementContext"
 
 function GroupList() {
   const appState = useContext(StateContext)
   const appDispatch = useContext(DispatchContext)
+  const userManagementState = useContext(GroupContext)
 
   const [state, setState] = useImmer({
     group: null, // New group to be created.
@@ -27,6 +29,9 @@ function GroupList() {
 
         setState((draft) => {
           draft.groups = response.data.groups || []
+          userManagementState.groups = draft.groups.map((element) => {
+            return { value: element, label: element }
+          })
         })
       } catch (e) {
         console.log(e)
@@ -47,6 +52,7 @@ function GroupList() {
 
       setState((draft) => {
         draft.groups.push(state.group)
+        userManagementState.groups.push({ value: state.group, label: state.group })
       })
     } catch (e) {
       console.log(e)
