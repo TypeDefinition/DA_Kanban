@@ -13,7 +13,7 @@ const app = express()
 app.use(cors()) // Allows anyone to connect.
 app.use(express.urlencoded({ extended: true })) // Setup the body parser to handle form submits.
 app.use(express.json())
-app.use(session({ secret: "super-secret" })) // Session setup.
+app.use(session({ secret: "SuperSecret" })) // Session setup.
 
 // Create a HTTP server, and start listening to a port.
 app.listen(process.env.PORT, () => {
