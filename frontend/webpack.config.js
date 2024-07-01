@@ -12,7 +12,7 @@ module.exports = {
   mode: "development",
   devtool: "source-map",
   devServer: {
-    port: 3500,
+    port: 3500, // Frontend Port
     static: {
       directory: path.join(__dirname, "app"),
     },
@@ -31,6 +31,10 @@ module.exports = {
             presets: ["@babel/preset-react", ["@babel/preset-env", { targets: { node: "12" } }]],
           },
         },
+      },
+      {
+        test: /\.css$/,
+        use: ["style-loader", "css-loader"],
       },
     ],
   },

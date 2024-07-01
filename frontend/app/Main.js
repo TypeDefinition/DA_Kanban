@@ -48,7 +48,6 @@ function Main() {
         draft.isPlanCreator = action.isPlanCreator
         break
       case "logout":
-        console.log("knnccb")
         draft.loggedIn = false
         draft.token = null
         draft.username = null

@@ -1,6 +1,5 @@
-import React, { useState, useContext } from "react"
+import React, { useContext } from "react"
 import { useNavigate } from "react-router-dom"
-import Axios from "axios"
 import StateContext from "../contexts/StateContext"
 import DispatchContext from "../contexts/DispatchContext"
 
@@ -17,14 +16,14 @@ function Header() {
             navigate("/")
           }}
         >
-          Application Menu
+          Home
         </button>{" "}
         <button
           onClick={() => {
             navigate("/user/profile")
           }}
         >
-          My Profile
+          Profile
         </button>{" "}
         {appState.isAdmin && (
           <>
