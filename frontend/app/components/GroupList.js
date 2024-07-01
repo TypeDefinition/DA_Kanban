@@ -66,6 +66,7 @@ function GroupList({ state, setState }) {
       if (response.status == Status.error) {
         setState((draft) => {
           draft.newGroupStatus = response.data.message
+          draft.newGroupStatusColour = "red"
         })
       }
 
@@ -74,6 +75,7 @@ function GroupList({ state, setState }) {
         // Append to group list.
         setState((draft) => {
           draft.newGroupStatus = response.data.message
+          draft.newGroupStatusColour = "green"
           draft.groups.push(state.newGroup)
         })
       }
@@ -113,7 +115,9 @@ function GroupList({ state, setState }) {
                 Create Group
               </button>
             </td>
-            <td>{state.newGroupStatus}</td>
+            <td>
+              <font color={state.newGroupStatusColour}>{state.newGroupStatus}</font>
+            </td>
           </tr>
         </tbody>
       </table>

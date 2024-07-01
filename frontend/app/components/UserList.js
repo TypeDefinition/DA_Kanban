@@ -63,6 +63,11 @@ function UserList({ state, setState }) {
 
   async function onCreateUser() {
     try {
+      setState((draft) => {
+        draft.newUserStatus = "..."
+        draft.newUserStatusColour = "black"
+      })
+
       const user = {
         username: state.newUsername,
         password: state.newPassword,
@@ -70,16 +75,13 @@ function UserList({ state, setState }) {
         enabled: Boolean(state.newEnabled),
         groups: state.newGroups,
         status: "",
+        statusColour: "black",
       }
 
       const response = await Axios.post("/user/users", user, { headers: { Authorization: `Bearer ${appState.token}` } })
 
       // Unauthorised access.
       if (response.status == Status.unauthorised) {
-        setState((draft) => {
-          draft.groups = []
-          draft.users = []
-        })
         appDispatch({ type: "logout" })
       }
 
@@ -87,6 +89,7 @@ function UserList({ state, setState }) {
       if (response.status == Status.error) {
         setState((draft) => {
           draft.newUserStatus = response.data.message
+          draft.newUserStatusColour = "red"
         })
       }
 
@@ -95,6 +98,7 @@ function UserList({ state, setState }) {
         // Append to user list.
         setState((draft) => {
           draft.newUserStatus = response.data.message
+          draft.newUserStatusColour = "green"
           draft.users.push(user)
         })
       }
@@ -105,6 +109,11 @@ function UserList({ state, setState }) {
 
   async function onUpdateUser(index) {
     try {
+      setState((draft) => {
+        draft.users[index].status = "..."
+        draft.users[index].statusColour = "black"
+      })
+
       const user = {
         type: "update-user",
         username: state.users[index].username,
@@ -117,10 +126,6 @@ function UserList({ state, setState }) {
 
       // Unauthorised access.
       if (response.status == Status.unauthorised) {
-        setState((draft) => {
-          draft.groups = []
-          draft.users = []
-        })
         appDispatch({ type: "logout" })
       }
 
@@ -128,6 +133,7 @@ function UserList({ state, setState }) {
       if (response.status == Status.error) {
         setState((draft) => {
           draft.users[index].status = response.data.message
+          draft.users[index].statusColour = "red"
         })
       }
 
@@ -135,6 +141,7 @@ function UserList({ state, setState }) {
       if (response.status == Status.ok) {
         setState((draft) => {
           draft.users[index].status = response.data.message
+          draft.users[index].statusColour = "green"
         })
 
         // Check if the admin updated himself/herself.
@@ -167,6 +174,11 @@ function UserList({ state, setState }) {
 
   async function onResetPassword(index) {
     try {
+      setState((draft) => {
+        draft.users[index].status = "..."
+        draft.users[index].statusColour = "black"
+      })
+
       const user = {
         type: "reset-password",
         username: state.users[index].username,
@@ -188,6 +200,7 @@ function UserList({ state, setState }) {
       if (response.status == Status.error) {
         setState((draft) => {
           draft.users[index].status = response.data.message
+          draft.users[index].statusColour = "red"
         })
       }
 
@@ -195,6 +208,7 @@ function UserList({ state, setState }) {
       if (response.status == Status.ok) {
         setState((draft) => {
           draft.users[index].status = response.data.message
+          draft.users[index].statusColour = "green"
         })
       }
     } catch (e) {
@@ -295,7 +309,9 @@ function UserList({ state, setState }) {
                 Create User
               </button>
             </td>
-            <td>{state.newUserStatus}</td>
+            <td>
+              <font color={state.newUserStatusColour}>{state.newUserStatus}</font>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -326,6 +342,8 @@ function UserList({ state, setState }) {
                     value={user.email}
                     onChange={(e) => {
                       setState((draft) => {
+                        draft.users[index].status = "Pending changes..."
+                        draft.users[index].statusColour = "black"
                         draft.users[index].email = e.target.value
                       })
                     }}
@@ -338,10 +356,15 @@ function UserList({ state, setState }) {
                     checked={user.enabled}
                     onChange={(e) => {
                       setState((draft) => {
+                        draft.users[index].status = "Pending changes..."
+                        draft.users[index].statusColour = "black"
+
                         // Do not allow super admin to be disabled.
                         if (draft.users[index].username != process.env.USER_SUPER_ADMIN) {
                           draft.users[index].enabled = Boolean(e.target.checked)
                         } else {
+                          draft.users[index].status = "Cannot disable super admin!"
+                          draft.users[index].statusColour = "red"
                           console.log(`Admin update user: Super admin ${process.env.USER_SUPER_ADMIN} cannot be disabled.`)
                         }
                       })
@@ -359,11 +382,16 @@ function UserList({ state, setState }) {
                     })}
                     onChange={(e) => {
                       setState((draft) => {
+                        draft.users[index].status = "Pending changes..."
+                        draft.users[index].statusColour = "black"
+
                         // Do not allow super admin to remove admin role.
                         const assignedGroups = e.map((element) => element.value)
                         const isSuperAdmin = draft.users[index].username == process.env.USER_SUPER_ADMIN
                         const inAdminGroup = assignedGroups.includes(process.env.GROUP_ADMIN)
                         if (isSuperAdmin && !inAdminGroup) {
+                          draft.users[index].status = `Super admin must be in ${process.env.GROUP_ADMIN} group!`
+                          draft.users[index].statusColour = "red"
                           console.log(`Admin update user: Super admin ${process.env.USER_SUPER_ADMIN} must be in ${process.env.GROUP_ADMIN} group.`)
                         } else {
                           draft.users[index].groups = assignedGroups
@@ -390,6 +418,12 @@ function UserList({ state, setState }) {
                     onChange={(e) => {
                       setState((draft) => {
                         draft.users[index].password = e.target.value
+                        draft.users[index].statusColour = "black"
+                        if (draft.users[index].password) {
+                          draft.users[index].status = "Pending changes..."
+                        } else {
+                          draft.users[index].status = ""
+                        }
                       })
                     }}
                   />
@@ -404,7 +438,9 @@ function UserList({ state, setState }) {
                     Reset Password
                   </button>
                 </td>
-                <td>{user.status}</td>
+                <td>
+                  <font color={user.statusColour}>{user.status}</font>
+                </td>
               </tr>
             )
           })}

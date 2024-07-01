@@ -10,6 +10,7 @@ function UserManagement() {
     // Create group.
     newGroup: "",
     newGroupStatus: "",
+    newGroupStatusColour: "red",
     // Create user.
     newUsername: "",
     newPassword: "",
@@ -17,6 +18,7 @@ function UserManagement() {
     newEnabled: true,
     newGroups: [],
     newUserStatus: "",
+    newUserStatusColour: "red",
     // Existing groups.
     groups: [],
     // Existing users.
