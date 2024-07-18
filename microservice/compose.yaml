@@ -1,0 +1,7 @@
+services:
+  microservice:
+    image: microservice
+    ports:
+      - 3502:3502
+#   networks:
+#     - no-internet

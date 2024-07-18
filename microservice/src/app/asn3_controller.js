@@ -374,7 +374,7 @@ async function PromoteTask2Done(req, res) {
 
         await sendEmail(emails, `Task Complete: ${id}`, `Application ${acronym}'s task ${id} is complete and awaiting your attention.`)
       }
-      sendEmailNotification()
+      // sendEmailNotification()
     }
 
     await conn.commit()
