@@ -1,4 +1,4 @@
-FROM node:alpine
+FROM node:18-alpine
 
 ENV APP_NAME microservice
 ENV DEP_FILE microservice-1.0.0.tgz
